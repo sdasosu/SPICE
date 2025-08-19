@@ -1,0 +1,4 @@
+Models to consider:
+Deeplabv3plus (resnet 50 and efficientnet_b3)
+FPN (resnet50 and efficientnet_b3)
+UNET (resnet50 and efficientnet_b3)
