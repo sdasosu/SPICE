@@ -4,21 +4,40 @@ from typing import Any, Dict, Optional
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from torchinfo import summary
 
 logger = logging.getLogger(__name__)
 
 
 class ModelInfoCalculator:
-    def __init__(self):
+    def __init__(self, img_size: int):
         self._original_model_cache = {}
+        self.img_size = img_size
 
     def calculate_model_info(self, model: torch.nn.Module) -> Dict[str, float]:
         total_params = sum(p.numel() for p in model.parameters())
         model_size_mb = total_params * 4 / (1024 * 1024)
 
+        try:
+            model_stats = summary(
+                model,
+                input_size=(1, 3, self.img_size, self.img_size),
+                verbose=0,
+                col_names=["input_size", "output_size", "num_params", "mult_adds"],
+                device="cpu",
+            )
+            total_macs = model_stats.total_mult_adds
+            gmacs = total_macs / 1e9
+        except Exception as e:
+            logger.warning(f"Could not calculate MACs: {e}")
+            total_macs = 0
+            gmacs = 0
+
         return {
             "total_params": total_params,
             "model_size_mb": model_size_mb,
+            "total_macs": total_macs,
+            "gmacs": gmacs,
         }
 
     def get_original_model_info(self, model_name: str) -> Dict[str, float]:
@@ -49,6 +68,8 @@ class ModelInfoCalculator:
                 info_with_prefix = {
                     "original_params": info["total_params"],
                     "original_size_mb": info["model_size_mb"],
+                    "original_macs": info["total_macs"],
+                    "original_gmacs": info["gmacs"],
                 }
 
                 self._original_model_cache[model_name] = info_with_prefix
@@ -60,7 +81,12 @@ class ModelInfoCalculator:
         except Exception as e:
             logger.warning(f"Could not get original model info for {model_name}: {e}")
 
-        return {"original_params": 0, "original_size_mb": 0}
+        return {
+            "original_params": 0,
+            "original_size_mb": 0,
+            "original_macs": 0,
+            "original_gmacs": 0,
+        }
 
     def calculate_percentages(
         self, current_info: Dict, original_info: Dict
@@ -78,14 +104,24 @@ class ModelInfoCalculator:
             percentages["params_percentage"] = 100.0
             percentages["size_percentage"] = 100.0
 
+        if original_info.get("original_macs", 0) > 0:
+            percentages["mac_percentage"] = (
+                current_info["total_macs"] / original_info["original_macs"]
+            ) * 100
+            percentages["mac_reduction"] = 100 - percentages["mac_percentage"]
+        else:
+            percentages["mac_percentage"] = 100.0
+            percentages["mac_reduction"] = 0.0
+
         return percentages
 
 
 class CoreEvaluator:
-    def __init__(self, device: torch.device, num_classes: int):
+    def __init__(self, device: torch.device, num_classes: int, img_size: int):
         self.device = device
         self.num_classes = num_classes
-        self.model_info_calc = ModelInfoCalculator()
+        self.img_size = img_size
+        self.model_info_calc = ModelInfoCalculator(img_size=img_size)
 
     def evaluate_single_model(
         self,
