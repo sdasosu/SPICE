@@ -119,12 +119,37 @@ class ReportGenerator:
                 ],
             }
 
+        if "mac_reduction" in df.columns:
+            efficiency["mac_reduction"] = {
+                "mean_reduction": float(df["mac_reduction"].mean()),
+                "best_reduction": float(df["mac_reduction"].max()),
+                "reduction_range": [
+                    float(df["mac_reduction"].min()),
+                    float(df["mac_reduction"].max()),
+                ],
+            }
+
+        if "gmacs" in df.columns:
+            efficiency["gmacs"] = {
+                "mean": float(df["gmacs"].mean()),
+                "min": float(df["gmacs"].min()),
+                "max": float(df["gmacs"].max()),
+            }
+
         if "miou" in df.columns and "params_percentage" in df.columns:
             efficiency_ratio = df["miou"] / (df["params_percentage"] / 100)
             efficiency["performance_per_parameter"] = {
                 "mean": float(efficiency_ratio.mean()),
                 "std": float(efficiency_ratio.std()),
                 "max": float(efficiency_ratio.max()),
+            }
+
+        if "miou" in df.columns and "mac_reduction" in df.columns:
+            mac_efficiency = df["miou"] / (100 - df["mac_reduction"])
+            efficiency["performance_per_mac"] = {
+                "mean": float(mac_efficiency.mean()),
+                "std": float(mac_efficiency.std()),
+                "max": float(mac_efficiency.max()),
             }
 
         return efficiency
@@ -173,6 +198,8 @@ class ReportGenerator:
                     "mean_acc",
                     "params_percentage",
                     "size_percentage",
+                    "gmacs",
+                    "mac_reduction",
                 ]:
                     if metric in model_data.columns:
                         model_stats[metric] = {
