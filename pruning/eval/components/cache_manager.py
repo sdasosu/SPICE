@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import pickle
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -12,9 +13,24 @@ class CacheManager:
         self.cache_dir = Path(cache_dir)
         self.enabled = enabled
         self.cache_file = self.cache_dir / ".eval_cache.pkl"
+        self.code_hash = self._compute_code_hash()
 
         if enabled:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _compute_code_hash(self) -> str:
+        """Compute hash of evaluation code to detect changes"""
+        eval_files = [
+            Path(__file__).parent / "core_evaluator.py",
+            Path(__file__).parent.parent / "metrics.py",
+        ]
+
+        hash_content = ""
+        for file_path in eval_files:
+            if file_path.exists():
+                hash_content += f"{file_path.stat().st_mtime}"
+
+        return hashlib.md5(hash_content.encode()).hexdigest()[:8]
 
     def generate_cache_key(self, model_info: Dict) -> str:
         if not self.enabled:
@@ -38,7 +54,20 @@ class CacheManager:
 
         try:
             with open(self.cache_file, "rb") as f:
-                cache = pickle.load(f)
+                cache_data = pickle.load(f)
+
+            if isinstance(cache_data, dict) and "code_hash" not in cache_data:
+                logger.info("Cache format outdated, clearing cache")
+                return {}
+
+            stored_hash = cache_data.get("code_hash", "")
+            if stored_hash != self.code_hash:
+                logger.info(
+                    f"Code changed (hash: {stored_hash} -> {self.code_hash}), clearing cache"
+                )
+                return {}
+
+            cache = cache_data.get("results", {})
             logger.info(f"Loaded evaluation cache with {len(cache)} entries")
             return cache
         except Exception as e:
@@ -50,8 +79,9 @@ class CacheManager:
             return
 
         try:
+            cache_data = {"code_hash": self.code_hash, "results": cache}
             with open(self.cache_file, "wb") as f:
-                pickle.dump(cache, f)
+                pickle.dump(cache_data, f)
         except Exception as e:
             logger.warning(f"Failed to save cache: {e}")
 
