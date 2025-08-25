@@ -29,15 +29,18 @@ class ScatterPlotCreator:
         """Prepare data for scatter plot"""
         scatter_data = []
         for _, row in df.iterrows():
-            scatter_data.append(
-                {
-                    "Model": row.get("model_name", "Unknown"),
-                    "Model Type": row.get("model_type", "Unknown"),
-                    "Size (%)": row.get("size_percentage", 100),
-                    "mIoU": row.get("miou", 0),
-                    "Pruning Ratio": row.get("pruning_ratio", 0),
-                }
-            )
+            data_point = {
+                "Model": row.get("model_name", "Unknown"),
+                "Model Type": row.get("model_type", "Unknown"),
+                "Size (%)": row.get("size_percentage", 100),
+                "mIoU": row.get("miou", 0),
+                "Pruning Ratio": row.get("pruning_ratio", 0),
+            }
+            if "gmacs" in row:
+                data_point["GMACs"] = row["gmacs"]
+            if "mac_reduction" in row:
+                data_point["MAC Reduction (%)"] = row["mac_reduction"]
+            scatter_data.append(data_point)
         return scatter_data
 
     def create_efficiency_scatter(self, df: pd.DataFrame) -> None:
@@ -68,6 +71,35 @@ class ScatterPlotCreator:
 
         except Exception as e:
             logger.error(f"Failed to create efficiency scatter plot: {e}")
+
+    def create_mac_efficiency_scatter(self, df: pd.DataFrame) -> None:
+        """Create scatter plot for MAC efficiency: MAC Reduction vs Performance"""
+        if not self.enabled or df is None or df.empty:
+            return
+
+        if "mac_reduction" not in df.columns:
+            logger.warning("MAC reduction data not available")
+            return
+
+        try:
+            scatter_data = self.prepare_scatter_data(df)
+            table = wandb.Table(dataframe=pd.DataFrame(scatter_data))
+
+            wandb.log(
+                {
+                    "evaluation/mac_efficiency_scatter": wandb.plot.scatter(
+                        table,
+                        "MAC Reduction (%)",
+                        "mIoU",
+                        title="MAC Efficiency: Computation Reduction vs Performance",
+                    )
+                }
+            )
+
+            logger.info("Created MAC efficiency scatter plot")
+
+        except Exception as e:
+            logger.error(f"Failed to create MAC efficiency scatter plot: {e}")
 
 
 class LinePlotCreator:
@@ -134,6 +166,9 @@ class InteractivePlotManager:
 
         try:
             self.scatter_creator.create_efficiency_scatter(df)
+
+            if "mac_reduction" in df.columns:
+                self.scatter_creator.create_mac_efficiency_scatter(df)
 
             self.line_creator.create_performance_curves(df)
 

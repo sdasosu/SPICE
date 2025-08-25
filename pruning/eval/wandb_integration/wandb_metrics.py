@@ -36,7 +36,7 @@ class MetricsProcessor:
     def extract_additional_metrics(
         results: Dict[str, Any], model_name: str
     ) -> Dict[str, Any]:
-        """Extract additional metrics like params_percentage and size_percentage"""
+        """Extract additional metrics like params_percentage, size_percentage, and MAC metrics"""
         additional_metrics = {}
 
         if "params_percentage" in results:
@@ -48,6 +48,17 @@ class MetricsProcessor:
             additional_metrics[f"{model_name}/size_percentage"] = results[
                 "size_percentage"
             ]
+
+        if "gmacs" in results:
+            additional_metrics[f"{model_name}/gmacs"] = results["gmacs"]
+
+        if "mac_percentage" in results:
+            additional_metrics[f"{model_name}/mac_percentage"] = results[
+                "mac_percentage"
+            ]
+
+        if "mac_reduction" in results:
+            additional_metrics[f"{model_name}/mac_reduction"] = results["mac_reduction"]
 
         return additional_metrics
 
@@ -63,6 +74,8 @@ class MetricsProcessor:
             "mean_acc",
             "params_percentage",
             "size_percentage",
+            "gmacs",
+            "mac_reduction",
         ]
 
         return [col for col in default_columns if col in df.columns]
