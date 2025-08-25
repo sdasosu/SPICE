@@ -57,16 +57,25 @@ class ResultFormatter:
             "params_percentage",
             "model_size_mb",
             "size_percentage",
+            "gmacs",
+            "mac_reduction",
         ]
 
         display_columns = [col for col in display_columns if col in df.columns]
         display_df = df[display_columns].copy()
 
-        for col in ["params_percentage", "size_percentage"]:
+        for col in ["params_percentage", "size_percentage", "mac_reduction"]:
             if col in display_df.columns:
                 display_df[col] = display_df[col].apply(lambda x: f"{x:.1f}%")
 
-        column_renames = {"params_percentage": "params_%", "size_percentage": "size_%"}
+        if "gmacs" in display_df.columns:
+            display_df["gmacs"] = display_df["gmacs"].apply(lambda x: f"{x:.2f}")
+
+        column_renames = {
+            "params_percentage": "params_%",
+            "size_percentage": "size_%",
+            "mac_reduction": "mac_reduction_%",
+        }
         display_df = display_df.rename(columns=column_renames)
 
         return display_df
