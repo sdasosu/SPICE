@@ -1,26 +1,22 @@
-# data/data.py
-import os
 import glob
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 
 import numpy as np
-from PIL import Image
 import torch
-from torch.utils.data import Dataset, DataLoader
+from PIL import Image
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
-# ---------- Classes ----------
 CLASS_MAPPING = {
     "adult": 1,
     "egg masses": 2,
     "instar nymph (1-3)": 3,
     "instar nymph (4)": 4,
 }
-NUM_CLASSES = 5  # background(0) + 4 foreground
+NUM_CLASSES = 5
 
-# ---------- Fixed resize (per requirement) ----------
 RESIZE_HW = (576, 576)
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
@@ -34,7 +30,9 @@ def _paired_xml_for(img_path: Path) -> Path:
     return img_path.with_suffix(".xml")
 
 
-def _parse_xml_boxes_and_classes(xml_path: Path) -> Tuple[Tuple[int, int], List[Tuple[int, int, int, int, int]]]:
+def _parse_xml_boxes_and_classes(
+    xml_path: Path,
+) -> Tuple[Tuple[int, int], List[Tuple[int, int, int, int, int]]]:
     """
     Returns:
       (width, height),
@@ -43,7 +41,6 @@ def _parse_xml_boxes_and_classes(xml_path: Path) -> Tuple[Tuple[int, int], List[
     tree = ET.parse(str(xml_path))
     root = tree.getroot()
 
-    # size
     size_el = root.find("size")
     if size_el is None:
         raise ValueError("Missing <size> in XML")
@@ -58,7 +55,6 @@ def _parse_xml_boxes_and_classes(xml_path: Path) -> Tuple[Tuple[int, int], List[
         name_el = obj.find("name")
         cname = name_el.text.strip() if name_el is not None else None
         if not cname or cname not in CLASS_MAPPING:
-            # Skip unknown class
             continue
         cls_idx = CLASS_MAPPING[cname]
 
@@ -74,7 +70,6 @@ def _parse_xml_boxes_and_classes(xml_path: Path) -> Tuple[Tuple[int, int], List[
         except Exception:
             continue
 
-        # clip + sanity
         xmin = max(0, xmin)
         ymin = max(0, ymin)
         xmax = min(width, xmax)
@@ -87,12 +82,14 @@ def _parse_xml_boxes_and_classes(xml_path: Path) -> Tuple[Tuple[int, int], List[
     return (width, height), boxes
 
 
-def _mask_from_boxes(width: int, height: int, boxes: List[Tuple[int, int, int, int, int]]) -> Image.Image:
+def _mask_from_boxes(
+    width: int, height: int, boxes: List[Tuple[int, int, int, int, int]]
+) -> Image.Image:
     """
     Rasterize axis-aligned boxes into a single-channel mask (uint8), background=0.
     """
     mask = np.zeros((height, width), dtype=np.uint8)
-    for (xmin, ymin, xmax, ymax, cls_idx) in boxes:
+    for xmin, ymin, xmax, ymax, cls_idx in boxes:
         mask[ymin:ymax, xmin:xmax] = cls_idx
     return Image.fromarray(mask, mode="L")
 
@@ -104,20 +101,27 @@ class SegmentationDataset(Dataset):
         if not self.split_dir.is_dir():
             raise FileNotFoundError(f"Split directory not found: {self.split_dir}")
 
-        # transforms
-        self.img_tf = transforms.Compose([
-            transforms.Resize(RESIZE_HW, interpolation=transforms.InterpolationMode.BILINEAR),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                 std=[0.229, 0.224, 0.225]),
-        ])
-        self.mask_resize = transforms.Resize(RESIZE_HW, interpolation=transforms.InterpolationMode.NEAREST)
+        self.img_tf = transforms.Compose(
+            [
+                transforms.Resize(
+                    RESIZE_HW, interpolation=transforms.InterpolationMode.BILINEAR
+                ),
+                transforms.ToTensor(),
+                transforms.Normalize(
+                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+                ),
+            ]
+        )
+        self.mask_resize = transforms.Resize(
+            RESIZE_HW, interpolation=transforms.InterpolationMode.NEAREST
+        )
 
-        # discover pairs + sanity check
-        self.samples: List[Tuple[Path, Path]] = []  # (img_path, xml_path)
-        self.per_class_counts = np.zeros(NUM_CLASSES, dtype=np.int64)  # simple object-count summary
+        self.samples: List[Tuple[Path, Path]] = []
+        self.per_class_counts = np.zeros(NUM_CLASSES, dtype=np.int64)
 
-        all_imgs = [Path(p) for p in glob.glob(str(self.split_dir / "*")) if _is_image(Path(p))]
+        all_imgs = [
+            Path(p) for p in glob.glob(str(self.split_dir / "*")) if _is_image(Path(p))
+        ]
         all_imgs.sort()
 
         kept = 0
@@ -126,35 +130,30 @@ class SegmentationDataset(Dataset):
             if not xml_path.exists():
                 continue
 
-            # basic image sanity
             try:
                 with Image.open(img_path) as im:
-                    im.verify()  # quick check
+                    im.verify()
             except Exception:
                 continue
 
-            # xml sanity + get objects
             try:
                 (w, h), boxes = _parse_xml_boxes_and_classes(xml_path)
             except Exception:
                 continue
 
-            # keep even if zero boxes (will be background-only)
             self.samples.append((img_path, xml_path))
             kept += 1
 
-            # update per-class counts by counting objects (not pixels)
             for _, _, _, _, cls_idx in boxes:
                 if 0 <= cls_idx < NUM_CLASSES:
                     self.per_class_counts[cls_idx] += 1
 
-        print(f"[{self.split}] usable samples: {kept} in {self.split_dir}")
-
-        # print per-class object counts (class 0 is background—omit from summary)
-        names = ["background(0)"] + list(CLASS_MAPPING.keys())
-        print(f"[{self.split}] per-class object counts:")
-        for c in range(NUM_CLASSES):
-            print(f"  {names[c]}: {int(self.per_class_counts[c])}")
+        self.dataset_info = {
+            "split": self.split,
+            "samples": kept,
+            "path": str(self.split_dir),
+            "per_class_counts": self.per_class_counts.tolist(),
+        }
 
     def __len__(self):
         return len(self.samples)
@@ -164,38 +163,82 @@ class SegmentationDataset(Dataset):
 
         image = Image.open(img_path).convert("RGB")
         (w, h), boxes = _parse_xml_boxes_and_classes(xml_path)
-        mask = _mask_from_boxes(w, h, boxes)  # PIL Image (L)
+        mask = _mask_from_boxes(w, h, boxes)
 
         image = self.img_tf(image)
         mask = self.mask_resize(mask)
-        mask = torch.from_numpy(np.array(mask, dtype=np.uint8)).long()  # (H,W) long indices
+        mask = torch.from_numpy(np.array(mask, dtype=np.uint8)).long()
 
         return image, mask
 
 
-def get_loaders( data_root: str, batch_size: int = 16, num_workers: int = 2, img_size: int = 576,  # ignored intentionally (fixed resize per requirement)
+def worker_init_fn(worker_id):
+    """Initialize worker with unique seed for reproducibility"""
+    import random
+
+    import numpy as np
+
+    worker_seed = torch.initial_seed() % 2**32
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
+
+def get_loaders(
+    data_root: str,
+    batch_size: int = 16,
+    num_workers: int = 2,
+    img_size: int = 576,
+    seed: int = 42,
 ):
     """
     Returns (train_loader, val_loader, test_loader)
     and prints per-class counts for each split.
     """
     train_set = SegmentationDataset(data_root, split="train")
-    val_set   = SegmentationDataset(data_root, split="valid")
-    test_set  = SegmentationDataset(data_root, split="test")
-
-    # NOTE: counts printed inside dataset constructors already
+    val_set = SegmentationDataset(data_root, split="valid")
+    test_set = SegmentationDataset(data_root, split="test")
 
     pin = torch.cuda.is_available()
-    train_loader = DataLoader( train_set, batch_size=batch_size, shuffle=True, 
-                              num_workers=num_workers, pin_memory=pin, drop_last=False)
-    
+    train_generator = torch.Generator()
+    train_generator.manual_seed(seed)
 
-    val_loader = DataLoader( val_set, batch_size=batch_size, shuffle=False,
-                            num_workers=num_workers, pin_memory=pin, drop_last=False)
-    
+    val_generator = torch.Generator()
+    val_generator.manual_seed(seed + 1)
 
-    test_loader = DataLoader( test_set, batch_size=batch_size, shuffle=False,
-                             num_workers=num_workers, pin_memory=pin, drop_last=False)
-    
+    test_generator = torch.Generator()
+    test_generator.manual_seed(seed + 2)
+
+    train_loader = DataLoader(
+        train_set,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin,
+        drop_last=False,
+        worker_init_fn=worker_init_fn,
+        generator=train_generator,
+    )
+
+    val_loader = DataLoader(
+        val_set,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin,
+        drop_last=False,
+        worker_init_fn=worker_init_fn,
+        generator=val_generator,
+    )
+
+    test_loader = DataLoader(
+        test_set,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin,
+        drop_last=False,
+        worker_init_fn=worker_init_fn,
+        generator=test_generator,
+    )
 
     return train_loader, val_loader, test_loader
