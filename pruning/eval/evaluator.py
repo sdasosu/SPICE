@@ -56,7 +56,7 @@ class PrunedModelEvaluator:
             cache_dir=config.output_dir, enabled=self.config_manager.cache_enabled
         )
         self.core_evaluator = CoreEvaluator(
-            device=self.device, num_classes=config.num_classes
+            device=self.device, num_classes=config.num_classes, img_size=config.img_size
         )
         self.result_processor = ResultProcessor(config.output_dir)
 
@@ -249,6 +249,12 @@ class PrunedModelEvaluator:
         # Generate advanced charts
         self.advanced_visualizer.create_3d_scatter_plot(df)
         self.advanced_visualizer.create_pareto_frontier_plot(df)
+
+        if "mac_reduction" in df.columns:
+            self.advanced_visualizer.create_pareto_frontier_plot(
+                df, x_col="mac_reduction", y_col="miou"
+            )
+
         self.advanced_visualizer.create_grouped_boxplot(df)
         self.advanced_visualizer.create_density_contour_plot(df)
         self.advanced_visualizer.create_performance_trajectory(df)

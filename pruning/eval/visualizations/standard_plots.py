@@ -218,6 +218,69 @@ class StandardPlotGenerator(BaseVisualizer):
         self._save_figure(fig, "compression_efficiency_plot")
         plt.close()
 
+    def generate_mac_efficiency_plot(self, df: pd.DataFrame) -> None:
+        """Generate plot showing performance vs MAC reduction"""
+        required_cols = ["miou", "model_type"]
+        if not self._validate_data_columns(df, required_cols):
+            return
+
+        if "mac_reduction" not in df.columns and "mac_percentage" not in df.columns:
+            logger.warning("MAC data not available, skipping MAC efficiency plot")
+            return
+
+        if "mac_reduction" in df.columns:
+            mac_col = "mac_reduction"
+            xlabel = "MAC Reduction (%)"
+        else:
+            df["mac_reduction_temp"] = 100 - df["mac_percentage"]
+            mac_col = "mac_reduction_temp"
+            xlabel = "MAC Reduction (%)"
+
+        fig, ax = plt.subplots(figsize=self.config.DEFAULT_FIGSIZE)
+
+        markers = ["o", "s", "^", "D", "v", "p"]
+        for idx, model_type in enumerate(df["model_type"].unique()):
+            model_data = df[df["model_type"] == model_type]
+            ax.scatter(
+                model_data[mac_col],
+                model_data["miou"],
+                label=model_type,
+                marker=markers[idx % len(markers)],
+                s=100,
+                alpha=0.7,
+                color=self._get_color_for_model(model_type),
+            )
+
+            if len(model_data) > 1:
+                z = np.polyfit(model_data[mac_col], model_data["miou"], 2)
+                p = np.poly1d(z)
+                x_trend = np.linspace(
+                    model_data[mac_col].min(),
+                    model_data[mac_col].max(),
+                    100,
+                )
+                ax.plot(
+                    x_trend,
+                    p(x_trend),
+                    "--",
+                    alpha=0.5,
+                    color=self._get_color_for_model(model_type),
+                )
+
+        ax.set_xlabel(xlabel, fontsize=14)
+        ax.set_ylabel("Mean IoU", fontsize=14)
+        ax.set_title(
+            "MAC Efficiency: Performance vs Computation Reduction", fontsize=16
+        )
+        ax.legend(title="Model Type", frameon=True, loc="best")
+        ax.grid(True, alpha=0.3)
+
+        ax.axhline(y=df["miou"].max(), color="gray", linestyle=":", alpha=0.5)
+
+        plt.tight_layout()
+        self._save_figure(fig, "mac_efficiency_plot")
+        plt.close()
+
     def generate_parameter_reduction_heatmap(self, df: pd.DataFrame) -> None:
         """Generate heatmap showing parameter reduction across models and pruning ratios"""
         required_cols = ["params_percentage", "pruning_ratio", "model_type"]
