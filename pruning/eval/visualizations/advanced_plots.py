@@ -130,7 +130,16 @@ class AdvancedPlotGenerator(BaseVisualizer):
 
         ax.set_xlabel(self._format_column_name(x_col), fontsize=14)
         ax.set_ylabel(self._format_column_name(y_col), fontsize=14)
-        ax.set_title("Pareto Frontier: Optimal Trade-offs", fontsize=16)
+
+        # Dynamic title based on x-axis
+        if x_col == "mac_reduction":
+            title = "MAC-based Pareto Frontier: Computation vs Performance"
+            filename = "pareto_frontier_mac"
+        else:
+            title = "Size-based Pareto Frontier: Model Size vs Performance"
+            filename = "pareto_frontier"
+
+        ax.set_title(title, fontsize=16)
         ax.legend(loc="best")
         ax.grid(True, alpha=0.3)
 
@@ -138,7 +147,7 @@ class AdvancedPlotGenerator(BaseVisualizer):
             plt.colorbar(scatter, ax=ax, label="Pruning Ratio")
 
         plt.tight_layout()
-        self._save_figure(fig, "pareto_frontier")
+        self._save_figure(fig, filename)
         plt.close()
 
     def create_confusion_matrix_heatmap(

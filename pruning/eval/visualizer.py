@@ -95,6 +95,7 @@ class EvaluationVisualizer:
             self.plot_generator.generate_per_class_iou_curves(self.df, self.class_names)
             self.plot_generator.generate_model_comparison_curves(self.df)
             self.plot_generator.generate_compression_efficiency_plot(self.df)
+            self.plot_generator.generate_mac_efficiency_plot(self.df)
             self.plot_generator.generate_parameter_reduction_heatmap(self.df)
             self.plot_generator.generate_per_model_analysis(self.df)
             self.plot_generator.generate_fine_tune_method_comparison(self.df)
@@ -126,6 +127,11 @@ class EvaluationVisualizer:
         """Generate compression efficiency plot (performance vs model size)"""
         if self.df is not None:
             self.plot_generator.generate_compression_efficiency_plot(self.df)
+
+    def generate_mac_efficiency_plot(self) -> None:
+        """Generate MAC efficiency plot (performance vs MAC reduction)"""
+        if self.df is not None:
+            self.plot_generator.generate_mac_efficiency_plot(self.df)
 
     def generate_parameter_reduction_heatmap(self) -> None:
         """Generate heatmap showing parameter reduction across models and pruning ratios"""
